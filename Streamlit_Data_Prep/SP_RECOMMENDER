@@ -1,0 +1,55 @@
+CREATE OR REPLACE PROCEDURE LENDINGAI_DB.BASE.SP_RECOMMENDER("INPUT_LIST" VARCHAR(16777216))
+RETURNS VARCHAR(16777216)
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.8'
+PACKAGES = ('snowflake-snowpark-python')
+HANDLER = 'recommendation'
+IMPORTS = ('@LENDINGAI_DB.BASE.STG_PKL_FILES/recommendation.pickle')
+EXECUTE AS OWNER
+AS '
+
+# The following section is the actual Python code that the stored procedure will execute.
+# The Python code defines a function named recommendation that takes two parameters: session and INPUT_LIST.
+
+import pickle
+import os
+import sys
+import pandas as pd
+import numpy as np
+import random
+
+def recommendation(session,INPUT_LIST):  
+
+  #The INPUT_LIST parameter is split into a list based on comma separation.
+  INPUT_LIST = INPUT_LIST.split(",")
+  selected_list = INPUT_LIST
+  
+  #Convert the list to a set to remove duplicate values.
+  INPUT_LIST=set(INPUT_LIST)
+
+  #Define the name of the pickle file to load.
+  model_name = "recommendation.pickle"
+
+  #Define the name of the import directory.
+  IMPORT_DIRECTORY_NAME = "snowflake_import_directory"
+
+  #Retrieve the directory path from system options.
+  import_dir = sys._xoptions[IMPORT_DIRECTORY_NAME]  
+
+  #Load the pickle file using the specified directory and file name.
+  pickle_file = pickle.load(open(import_dir+model_name,"rb"))
+
+  #Perform some data processing and recommendation logic.
+  recommendation = pickle_file["consequents"][pickle_file["antecedents"] == INPUT_LIST]
+
+  #If no recommendation is found, return a message indicating that multiple options are available.
+  if recommendation.empty:
+     return "Multiple loan options found. Loan recommendation is not available."
+  else:
+     first_value = recommendation.iloc[0]
+     str_value = str(first_value)
+     substring = str_value[12:-3]
+
+  #Return the recommendation substring.
+  return substring
+';
