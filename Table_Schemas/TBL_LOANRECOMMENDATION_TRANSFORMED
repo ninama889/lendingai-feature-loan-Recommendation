@@ -1,0 +1,14 @@
+create or replace TABLE LENDINGAI_DB.BASE.TBL_LOANRECOMMENDATION_TRANSFORMED (
+	"Business" FLOAT,
+	"Car financing" FLOAT,
+	"Credit card refinancing" FLOAT,
+	"Debt consolidation" FLOAT,
+	"Green loan" FLOAT,
+	"Home buying" FLOAT,
+	"Home improvement" FLOAT,
+	"Learning and training" FLOAT,
+	"Major purchase" FLOAT,
+	"Medical expenses" FLOAT,
+	"Moving and relocation" FLOAT,
+	"Vacation" FLOAT
+);
