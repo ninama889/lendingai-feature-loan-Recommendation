@@ -1,9 +1,0 @@
-CREATE OR REPLACE TEMPORARY TABLE LENDINGAI_DB.BASE.TBL_Temp_Counts AS SELECT "id", COUNT(*) AS row_count FROM LENDINGAI_DB.BASE.TBL_FILTERED_DATA GROUP BY "id";
-
--- Create a new table that includes the counts and sorts by row_count in ascending order
-CREATE OR REPLACE TABLE LENDINGAI_DB.BASE.TBL_ID_TABLE AS
-SELECT it1."id", it1.EMP_TITLE,it1.TITLE,it1.LOAN_AMNT,tc.row_count
-FROM LENDINGAI_DB.BASE.TBL_FILTERED_DATA it1
-JOIN LENDINGAI_DB.BASE.TBL_Temp_Counts tc
-ON it1."id" = tc."id"
-ORDER BY tc.row_count ASC;
