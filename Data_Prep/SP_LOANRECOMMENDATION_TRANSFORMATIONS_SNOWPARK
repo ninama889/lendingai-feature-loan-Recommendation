@@ -1,0 +1,76 @@
+CREATE OR REPLACE PROCEDURE LENDINGAI_DB.BASE.SP_LOANRECOMMENDATION_TRANSFORMATIONS_SNOWPARK ()
+RETURNS VARCHAR(16777216)
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.8'
+PACKAGES = ('snowflake-snowpark-python','mlxtend')
+HANDLER = 'main'
+EXECUTE AS OWNER
+AS
+$$
+import snowflake.snowpark as snowpark
+import snowflake.connector
+from snowflake.snowpark.window import Window
+from snowflake.snowpark.functions import col, when, count, row_number
+
+
+def main(session: snowpark.Session): 
+    # Your code goes here, inside the "main" handler.
+    tbl = session.table("LENDINGAI_DB.RAW.APPROVEDLOANAPPLICATIONS")    
+    
+    #Step 1:Select emp_title, title From Approved_Applications Dataset
+    df = tbl.select(col("title"),col("emp_title"),col("id"),col("loan_amnt"))
+    
+    #Step 2:Filter records with tag 'Other' and Filter any missing value records for both emp_title and title
+    df_filtered = df.filter((col("title") != 'Other') & (col("emp_title") != 'Other') & (col("title") != 'null') & (col("emp_title") != 'null'))
+    
+    # Step 3: Remove duplicates
+    df_drop = df_filtered.dropDuplicates("title","emp_title")
+    
+    # Step 4: Filter records with emp_title_count = 1 and give an ID for each emp_title
+      
+    
+    # Define a window specification with the appropriate ordering
+    window_spec = Window.partitionBy(col("emp_title")).orderBy(col("title"))
+    
+    # Calculate the count of each 'emp_title' within the DataFrame
+    df_with_emp_title_count = df_drop.withColumn("emp_title_count", count("*").over(window_spec))
+    
+    # Filter records where 'emp_title_count' is greter than and equal to 1
+    df_filtered_emp_title_count = df_with_emp_title_count.filter(col("emp_title_count") >= 1)
+    
+    # Define a window specification with the appropriate ordering
+    window_spec = Window.orderBy(col("emp_title"))
+    
+    # Assign an incremental ID to each distinct emp_title
+    df_with_incremental_emp_title_id = df_filtered_emp_title_count.withColumn(
+        "id",
+        row_number().over(window_spec)
+    )
+    
+    # Save the DataFrame as a table
+    df_with_incremental_emp_title_id.write.mode('overwrite').save_as_table('TBL_S3_LOGS')
+    
+    #Step 5: Perform dummy encoding and prepare a matrix with 0,1 values.
+    pivot_sql = session.sql("""SELECT
+        MAX(CASE WHEN TITLE='Business' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Business", 
+        MAX(CASE WHEN TITLE='Medical expenses' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) "Medical expenses",
+        MAX(CASE WHEN TITLE='Major purchase' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) "Major purchase",
+        MAX(CASE WHEN TITLE='Learning and training' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Learning and training", 
+        MAX(CASE WHEN TITLE='Credit card refinancing' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Credit card refinancing", 
+        MAX(CASE WHEN TITLE='Debt consolidation' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Debt consolidation", 
+        MAX(CASE WHEN TITLE='Car financing' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Car financing", 
+        MAX(CASE WHEN TITLE='Vacation' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Vacation", 
+        MAX(CASE WHEN TITLE='Moving and relocation' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Moving and relocation", 
+        MAX(CASE WHEN TITLE='Green loans' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Green loans", 
+        MAX(CASE WHEN TITLE='Home improvement' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Home improvement", 
+        MAX(CASE WHEN TITLE='Home buying' AND EMP_TITLE_COUNT>=1 THEN 1 ELSE 0 END) AS "Home buying" 
+        FROM TBL_S3_LOGS
+          GROUP BY
+            emp_title""")
+    pivot_sql.collect()
+    
+    pivot_sql.write.mode('overwrite').save_as_table('LENDINGAI_DB.BASE.TBL_LOANRECOMMENDATION_TRANSFORMED_SNOWPARK')
+    
+    return 'done'
+
+$$;
