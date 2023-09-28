@@ -1,0 +1,48 @@
+CREATE OR REPLACE PROCEDURE LENDINGAI_DB.MART.SP_LOANRECOMMENDATION_MODEL()
+RETURNS VARCHAR(16777216)
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.8'
+PACKAGES = ('snowflake-snowpark-python','mlxtend')
+HANDLER = 'main'
+EXECUTE AS OWNER
+AS
+$$
+
+#Import necessary libraries and modules.
+import snowflake.snowpark as snowpark
+import pickle
+from mlxtend.frequent_patterns import apriori
+from mlxtend.frequent_patterns import association_rules
+
+def main(session: snowpark.Session):
+
+    #retrieve data from a Snowflake table (TBL_LOANRECOMMENDATION_TRANSFORMED) .
+    pivot_df = session.table('LENDINGAI_DB.BASE.TBL_LOANRECOMMENDATION_TRANSFORMED')
+    pivot_df = pivot_df.to_pandas()
+    
+    # Apply the Apriori algorithm to find frequent itemsets in the DataFrame.
+    my_frequent_itemsets = apriori(pivot_df, min_support=0.005, use_colnames=True)
+    my_frequent_itemsets.head()
+    
+    # Generate association rules based on the frequent itemsets using the mlxtend library.
+    my_rules = association_rules(my_frequent_itemsets, metric="lift", min_threshold=1.2)
+
+    #Calculate the lengths of antecedents and consequents in the association rules.
+    my_rules["antecedents_length"] = my_rules["antecedents"].apply(lambda x: len(x))
+    my_rules["consequents_length"] = my_rules["consequents"].apply(lambda x: len(x))
+
+    #Sort the association rules by confidence in descending order.
+    my_rules = my_rules.sort_values(["confidence"], ascending =[False])
+
+    #Define the name for the pickle (serialized data) file to save the association rules.
+    model_name="recommendation.pickle"
+
+    #Serialize and save the association rules to a file in the /tmp/ directory.
+    pickle.dump(my_rules, open("/tmp/" + model_name, "wb"))
+
+    #Upload the saved file to a Snowflake stage location (STG_PKL_FILES).
+    session.file.put("/tmp/" + model_name, "@BASE.STG_PKL_FILES", auto_compress=False, overwrite=True)
+
+    #Return a message indicating that the procedure has completed.
+    return 'done';
+$$;
